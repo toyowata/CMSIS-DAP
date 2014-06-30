@@ -28,7 +28,7 @@ static OS_TID isr_notify;
 #endif
 
 #ifdef SW_RESET_BUTTON
-#ifdef BOARD_ARCH_BLE
+#if defined(BOARD_ARCH_BLE) || defined(BOARD_HRM1017)
 #define RESET_PORT        (0)
 #define RESET_PIN         (1)
 #else

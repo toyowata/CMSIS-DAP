@@ -583,6 +583,8 @@ static void initDisconnect(uint8_t success) {
         
         enter_isp();
     }
+#elif defined(DBG_NRF51822)
+    int autorst = 1;
 #else
     int autorst = 0;
 #endif
