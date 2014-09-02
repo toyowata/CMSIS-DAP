@@ -517,7 +517,9 @@ int ProgramPage (unsigned long adr, unsigned long sz, unsigned char *buf) {
   IAP.cmd    = 51;                             // Copy RAM to Flash
   IAP.par[0] = adr;                            // Destination Flash Address
   IAP.par[1] = (unsigned long)buf;             // Source RAM Address
-#if defined(LPC11xx_32) || defined(LPC8xx_4) || defined(LPC1549_256) || defined(LPC11U68_256)
+#if defined(LPC8xx_4)
+  IAP.par[2] = 64;                            // Fixed Page Size
+#elif defined(LPC11xx_32) || defined(LPC1549_256) || defined(LPC11U68_256)
   IAP.par[2] = 256;                            // Fixed Page Size
 #else
   IAP.par[2] = 512;                            // Fixed Page Size

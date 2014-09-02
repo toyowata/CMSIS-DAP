@@ -937,7 +937,7 @@ uint8_t swd_set_target_state(TARGET_RESET_STATE state) {
             if (!swd_write_word(DBG_EMCR, 0)) {
                 return 0;
             }
-
+			
             break;
 
         case NO_DEBUG:

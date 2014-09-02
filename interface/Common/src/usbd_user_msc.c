@@ -49,10 +49,14 @@
 #   define WANTED_SIZE_IN_KB                        (512)
 #elif defined(DBG_K64F)
 #   define WANTED_SIZE_IN_KB                        (1024)
+#elif defined(DBG_LPC810)
+#   define WANTED_SIZE_IN_KB                        (4)
 #elif defined(DBG_LPC812)
 #   define WANTED_SIZE_IN_KB                        (16)
 #elif defined(DBG_LPC1114)
 #   define WANTED_SIZE_IN_KB                        (32)
+#elif defined(DBG_LPC11U35)
+#   define WANTED_SIZE_IN_KB                        (64)
 #elif defined(DBG_LPC4330)
 #   if defined(BOARD_BAMBINO_210E)
 #       define WANTED_SIZE_IN_KB                    (8192)
@@ -63,6 +67,8 @@
 #   define WANTED_SIZE_IN_KB                        (512)
 #elif defined(DBG_LPC11U68)
 #   define WANTED_SIZE_IN_KB                        (256)
+#elif defined(DBG_RZA1H)
+#   define WANTED_SIZE_IN_KB                        (1024*8)
 
 #elif defined(DBG_LPC4337)
 #   define WANTED_SIZE_IN_KB                        (1024)
@@ -1025,6 +1031,7 @@ void usbd_msc_write_sect (uint32_t block, uint8_t *buf, uint32_t num_of_blocks) 
             if (flash_started && (block == theoretical_start_sector)) {
                 // avoid erasing the internal flash if only the external flash will be updated
                 if (flash_addr_offset == 0) {
+
 #ifndef DBG_NRF51822
                      if (target_flash_erase_chip() == 0) {
                          reason = SWD_ERROR;
