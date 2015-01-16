@@ -18,7 +18,11 @@
 #include "target_flash.h"
 #include "target_reset.h"
 #include "swd_host.h"
+#if defined(BOARD_RZA1H)
+#include "debug_ca.h"
+#else
 #include "debug_cm.h"
+#endif
 #include "DAP_config.h"
 #include "DAP.h"
 
@@ -28,7 +32,11 @@
 #define DBG_Addr     (0xe000edf0)
 
 // AP CSW register, base value
-#define CSW_VALUE (CSW_RESERVED | CSW_MSTRDBG | CSW_HPROT | CSW_DBGSTAT | CSW_SADDRINC)
+#if defined(BOARD_RZA1H)
+#define CSW_VALUE (0x80000000|CSW_RESERVED | CSW_MSTRDBG | CSW_HPROT | CSW_DBGSTAT | CSW_PADDRINC)
+#else
+#define CSW_VALUE (0x80000000|CSW_RESERVED | CSW_MSTRDBG | CSW_HPROT | CSW_DBGSTAT | CSW_SADDRINC)
+#endif
 
 // SWD register access
 #define SWD_REG_AP        (1)
@@ -44,6 +52,23 @@
 
 #define MAX_SWD_RETRY 10
 #define MAX_TIMEOUT   10000  // Timeout for syscalls on target
+
+#if defined(BOARD_RZA1H)
+#define CMD_MRC                (0xEE100E15)  /* 1110 1110 0001 0000 RRRR 1110 0001 0101 */
+#define CMD_MCR                (0xEE000E15)  /* 1110 1110 0000 0000 RRRR 1110 0001 0101 */
+#define CMD_MSR                (0xE12CF000)  /* 1110 0001 0010 1100 1111 0000 0000 RRRR */
+#define CMD_MRS                (0xE14F0000)  /* 1110 0001 0100 1111 RRRR 0000 0000 0000 */
+#define CMD_MOV                (0xE1A00000)  /* 1110 0001 1010 0000 DDDD 0000 0000 RRRR */ /* D = distination */
+
+#define DBGDSCR_TX_FULL        (0x20000000)
+#define DBGDSCR_HALTED         (0x00000001)
+
+#define DBGOSLAR_OS_LOCK       (0xC5ACCE55)  /*  */
+#define DBGOSLAR_OS_UNLOCK     (0x00000000)  /*  */
+
+#define SELECT_MEM             (0x00000000)  /* setting of SELECT access memmory */
+#define SELECT_DBG             (0x01000000)  /* setting of SELECT access Debug Register */
+#endif
 
 // Some targets require a soft reset for flash programming (RESET_PROGRAM).
 // Otherwise a hardware reset is the default. This will not affect
@@ -77,9 +102,21 @@ typedef struct {
 } DEBUG_STATE;
 
 static DAP_STATE dap_state;
+#if defined(BOARD_RZA1H)
+static uint32_t select_state;
+static volatile uint32_t swd_init_debug_flag = 0;
+#endif
 
+#if defined(BOARD_RZA1H)
+static uint8_t swd_read_core_register(uint32_t n, uint32_t *val, uint32_t cmd);
+static uint8_t swd_write_core_register(uint32_t n, uint32_t val, uint32_t cmd);
+/* Add static functions */
+static uint8_t swd_restart_req(void);
+static uint8_t swd_enable_debug(void);
+#else
 static uint8_t swd_read_core_register(uint32_t n, uint32_t *val);
 static uint8_t swd_write_core_register(uint32_t n, uint32_t val);
+#endif
 
 static void int2array(uint8_t * res, uint32_t data, uint8_t len) {
     uint8_t i = 0;
@@ -196,6 +233,7 @@ uint8_t swd_write_ap(uint32_t adr, uint32_t val) {
         return 0;
     }
 
+
     req = SWD_REG_DP | SWD_REG_R | SWD_REG_ADR(DP_RDBUFF);
     ack = swd_transfer_retry(req, NULL);
 
@@ -209,6 +247,10 @@ static uint8_t swd_write_block(uint32_t address, uint8_t *data, uint32_t size) {
     uint8_t tmp_in[4], req;
     uint32_t size_in_words;
     uint32_t i, ack;
+#if defined(BOARD_RZA1H)
+    uint32_t work_select_state;
+    uint32_t *work_write_data;
+#endif
 
     if (size==0)
         return 0;
@@ -219,6 +261,21 @@ static uint8_t swd_write_block(uint32_t address, uint8_t *data, uint32_t size) {
         return 0;
     }
 
+#if defined(BOARD_RZA1H)
+    if ((DEBUG_REGSITER_BASE <= address) && (address <= DBGCID3)) {
+        work_select_state = SELECT_DBG;
+    } else {
+        work_select_state = SELECT_MEM;
+    }
+    if (select_state != work_select_state) {
+        // SELECT
+        select_state = work_select_state;
+        int2array(tmp_in, select_state, 4);
+        if (swd_transfer_retry(0x08, (uint32_t *)tmp_in) != 0x01) {
+            return 0;
+        }
+    }
+#endif
     // TAR write
     req = SWD_REG_AP | SWD_REG_W | (1 << 2);
     int2array(tmp_in, address, 4);
@@ -228,16 +285,30 @@ static uint8_t swd_write_block(uint32_t address, uint8_t *data, uint32_t size) {
 
     // DRW write
     req = SWD_REG_AP | SWD_REG_W | (3 << 2);
+#if defined(BOARD_RZA1H)
+    work_write_data = (uint32_t *)data;
+#endif
     for (i = 0; i < size_in_words; i++) {
+#if defined(BOARD_RZA1H)
+        int2array(tmp_in, *work_write_data, 4);
+        ack = swd_transfer_retry(req, (uint32_t *)tmp_in);
+        if (ack != 0x01) {
+            return 0;
+        }
+        work_write_data++;
+#else
         if (swd_transfer_retry(req, (uint32_t *)data) != 0x01) {
             return 0;
         }
         data+=4;
+#endif
     }
 
+#if !defined(BOARD_RZA1H)
     // dummy read
     req = SWD_REG_DP | SWD_REG_R | SWD_REG_ADR(DP_RDBUFF);
     ack = swd_transfer_retry(req, NULL);
+#endif
 
     return (ack == 0x01);
 }
@@ -248,6 +319,9 @@ static uint8_t swd_read_block(uint32_t address, uint8_t *data, uint32_t size) {
     uint8_t tmp_in[4], req, ack;
     uint32_t size_in_words;
     uint32_t i;
+#if defined(BOARD_RZA1H)
+    uint32_t work_select_state;
+#endif
 
     if (size == 0) {
         return 0;
@@ -259,6 +333,21 @@ static uint8_t swd_read_block(uint32_t address, uint8_t *data, uint32_t size) {
         return 0;
     }
 
+#if defined(BOARD_RZA1H)
+    if ((DEBUG_REGSITER_BASE <= address) && (address <= DBGCID3)) {
+        work_select_state = SELECT_DBG;
+    } else {
+        work_select_state = SELECT_MEM;
+    }
+    if (select_state != work_select_state) {
+        // SELECT
+        select_state = work_select_state;
+        int2array(tmp_in, select_state, 4);
+        if (swd_transfer_retry(0x08, (uint32_t *)tmp_in) != 0x01) {
+            return 0;
+        }
+    }
+#endif
     // TAR write
     req = SWD_REG_AP | SWD_REG_W | (1 << 2);
     int2array(tmp_in, address, 4);
@@ -292,7 +381,23 @@ static uint8_t swd_read_data(uint32_t addr, uint32_t *val) {
     uint8_t tmp_in[4];
     uint8_t tmp_out[4];
     uint8_t req, ack;
+#if defined(BOARD_RZA1H)
+    uint32_t work_select_state;
 
+    if ((DEBUG_REGSITER_BASE <= addr) && (addr <= DBGCID3)) {
+        work_select_state = SELECT_DBG;
+    } else {
+        work_select_state = SELECT_MEM;
+    }
+    if (select_state != work_select_state) {
+        // SELECT
+        select_state = work_select_state;
+        int2array(tmp_in, select_state, 4);
+        if (swd_transfer_retry(0x08, (uint32_t *)tmp_in) != 0x01) {
+            return 0;
+        }
+    }
+#endif
     // put addr in TAR register
     int2array(tmp_in, addr, 4);
     req = SWD_REG_AP | SWD_REG_W | (1 << 2);
@@ -300,7 +405,7 @@ static uint8_t swd_read_data(uint32_t addr, uint32_t *val) {
         return 0;
     }
 
-    // read data
+    // read data(DRW)
     req = SWD_REG_AP | SWD_REG_R | (3 << 2);
     if (swd_transfer_retry(req, (uint32_t *)tmp_out) != 0x01) {
         return 0;
@@ -320,16 +425,35 @@ static uint8_t swd_write_data(uint32_t address, uint32_t data) {
     uint8_t tmp_in[4];
     uint8_t req, ack;
 
+#if defined(BOARD_RZA1H)
+    uint32_t work_select_state;
+
+    if ((DEBUG_REGSITER_BASE <= address) && (address <= DBGCID3)) {
+        work_select_state = SELECT_DBG;
+    } else {
+        work_select_state = SELECT_MEM;
+    }
+    if (select_state != work_select_state) {
+        // SELECT
+        select_state = work_select_state;
+        int2array(tmp_in, select_state, 4);
+        if (swd_transfer_retry(0x08, (uint32_t *)tmp_in) != 0x01) {
+            return 0;
+        }
+    }
+#endif
     // put addr in TAR register
     int2array(tmp_in, address, 4);
     req = SWD_REG_AP | SWD_REG_W | (1 << 2);
     if (swd_transfer_retry(req, (uint32_t *)tmp_in) != 0x01) {
         return 0;
     }
-
-    // write data
+    // write data(DRW)
     int2array(tmp_in, data, 4);
     req = SWD_REG_AP | SWD_REG_W | (3 << 2);
+#if defined(BOARD_RZA1H)
+    ack = swd_transfer_retry(req, (uint32_t *)tmp_in);
+#else
     if (swd_transfer_retry(req, (uint32_t *)tmp_in) != 0x01) {
         return 0;
     }
@@ -337,6 +461,7 @@ static uint8_t swd_write_data(uint32_t address, uint32_t data) {
     // dummy read
     req = SWD_REG_DP | SWD_REG_R | SWD_REG_ADR(DP_RDBUFF);
     ack = swd_transfer_retry(req, NULL);
+#endif
 
     return (ack == 0x01) ? 1 : 0;
 }
@@ -386,7 +511,11 @@ static uint8_t swd_read_byte(uint32_t addr, uint8_t *val) {
 static uint8_t swd_write_byte(uint32_t addr, uint8_t val) {
     uint32_t tmp;
 
+#if defined(BOARD_RZA1H)
+    if (!swd_write_ap(AP_CSW, CSW_VALUE | CSW_NADDRINC | CSW_SIZE8)) {
+#else
     if (!swd_write_ap(AP_CSW, CSW_VALUE | CSW_SIZE8)) {
+#endif
         return 0;
     }
 
@@ -401,6 +530,23 @@ static uint8_t swd_write_byte(uint32_t addr, uint8_t val) {
 // Read unaligned data from target memory.
 // size is in bytes.
 uint8_t swd_read_memory(uint32_t address, uint8_t *data, uint32_t size) {
+#if defined(BOARD_RZA1H)
+    uint32_t read_size;
+    uint32_t* read_data;
+
+    read_size = (size / 4);
+    read_data = (uint32_t*)data;
+    /* Write bytes until end */
+    while ((read_size > 0)) {
+        if (!swd_read_data(address, read_data)) {
+            return 0;
+        }
+        address+=4;
+        read_data++;
+        read_size--;
+    }
+    return 1;
+#else
     uint32_t n;
 
     // Read bytes until word aligned
@@ -441,11 +587,35 @@ uint8_t swd_read_memory(uint32_t address, uint8_t *data, uint32_t size) {
     }
 
     return 1;
+#endif
 }
 
 // Write unaligned data to target memory.
 // size is in bytes.
 uint8_t swd_write_memory(uint32_t address, uint8_t *data, uint32_t size) {
+#if defined(BOARD_RZA1H)
+    uint32_t n;
+    while (size > 3) {
+        // Limit to auto increment page size
+        n = TARGET_AUTO_INCREMENT_PAGE_SIZE - (address & (TARGET_AUTO_INCREMENT_PAGE_SIZE - 1));
+        if (size < n) {
+            n = size & 0xFFFFFFFC; // Only count complete words remaining
+        }
+
+        if (!swd_write_block(address, data, n)) {
+            return 0;
+        }
+
+        address += n;
+        data += n;
+        size -= n;
+    }
+    /* Auto increment is end */
+    /* Return the CSW reg value to SIZE8 */
+    if (!swd_write_ap(AP_CSW, CSW_VALUE | CSW_SIZE8)) {
+        return 0;
+    }
+#else
     uint32_t n;
     // Write bytes until word aligned
     while ((size > 0) && (address & 0x3)) {
@@ -485,43 +655,108 @@ uint8_t swd_write_memory(uint32_t address, uint8_t *data, uint32_t size) {
     }
 
     return 1;
+#endif
 }
 
 // Execute system call.
 static uint8_t swd_write_debug_state(DEBUG_STATE *state) {
     uint32_t i, status;
-
+#if defined(BOARD_RZA1H)
+    uint32_t work_cmd;
+#endif
     if (!swd_write_dp(DP_SELECT, 0)) {
         return 0;
     }
 
     // R0, R1, R2, R3
     for (i = 0; i < 4; i++) {
+#if defined(BOARD_RZA1H)
+        work_cmd = 0;
+        work_cmd = (CMD_MRC | (i << 12));
+        if (!swd_write_core_register(i, state->r[i], work_cmd)) {
+            return 0;
+        }
+#else
         if (!swd_write_core_register(i, state->r[i])) {
             return 0;
         }
+#endif
     }
 
     // R9
+#if defined(BOARD_RZA1H)
+    work_cmd = 0;
+    work_cmd = (CMD_MRC | (9 << 12));
+    if (!swd_write_core_register(9, state->r[9], work_cmd)) {
+        return 0;
+    }
+#else
     if (!swd_write_core_register(9, state->r[9])) {
         return 0;
     }
+#endif
 
+#if defined(BOARD_RZA1H)
+    /* R13, R14 */
+    for (i=13; i<15; i++) {
+        work_cmd = 0;
+        work_cmd = (CMD_MRC | (i << 12));
+        if (!swd_write_core_register(i, state->r[i], work_cmd)) {
+            return 0;
+        }
+    }
+#else
     // R13, R14, R15
     for (i=13; i<16; i++) {
         if (!swd_write_core_register(i, state->r[i])) {
             return 0;
         }
     }
+#endif
 
     // xPSR
+#if defined(BOARD_RZA1H)
+    /* xPSR write */
+    /* write PSR (write r6) */
+    work_cmd = 0;
+    work_cmd = (CMD_MRC | (6 << 12));
+    if (!swd_write_core_register(0, state->xpsr, work_cmd)) {
+        return 0;
+    }
+    /* MSR (PSR <- r6) */
+    work_cmd = 0;
+    work_cmd = (CMD_MSR | (6));
+    if (!swd_write_word(DBGITR, work_cmd)) {
+        return 0;
+    }
+#else
     if (!swd_write_core_register(16, state->xpsr)) {
         return 0;
     }
+#endif
 
+#if defined(BOARD_RZA1H)
+    /* R15(PC) */
+    /* MRC R7 */
+    work_cmd = 0;
+    work_cmd = (CMD_MRC | (7 << 12));
+    if (!swd_write_core_register(7, state->r[15], work_cmd)) {
+        return 0;
+    }
+    /* MOV R15, R7 */
+    work_cmd = 0;
+    work_cmd = (CMD_MOV | (15 << 12) | (7));
+    if (!swd_write_word(DBGITR, work_cmd)) {
+        return 0;
+    }
+    if (!swd_restart_req()) {
+        return 0;
+    }
+#else
     if (!swd_write_word(DBG_HCSR, DBGKEY | C_DEBUGEN)) {
         return 0;
     }
+#endif
 
     // check status
     if (!swd_read_dp(DP_CTRL_STAT, &status)){
@@ -535,7 +770,78 @@ static uint8_t swd_write_debug_state(DEBUG_STATE *state) {
     return 1;
 }
 
+#if defined(BOARD_RZA1H)
+static uint8_t swd_restart_req(void) {
+    uint32_t val, i, timeout = MAX_TIMEOUT;
+    /* Clear ITRen */
+    if (!swd_read_word(DBGDSCR, &val)) {
+        return 0;
+    }
+    val = val & ~0x00002000;
+    if (!swd_write_word(DBGDSCR, val)) {
+        return 0;
+    }
+    for (i = 0; i < timeout; i++) {
+        /* read DBGDSCR */
+        if (!swd_read_word(DBGDSCR, &val)) {
+            return 0;
+        }
+        /* wait Clear UND_I, ADABORT_I, SDABORT_I[bit:8-6] and InstrCompl_I[bit24] set to 1 */
+        if ((val & 0x010001C0) == 0x01000000) {
+            break;
+        } else if (i == (timeout -1)) {
+            return 0;
+        }
+    }
+    /* DBGDRCR Restart req */
+    if (!swd_write_word(DBGDRCR, 0x00000002 )) {
+        return 0;
+    }
+    
+    for (i = 0; i < timeout; i++) {
+        /* read DBGDSCR */
+        if (!swd_read_word(DBGDSCR, &val)) {
+            return 0;
+        }
+        if ((val & 0x00000002) == 0x00000002) {
+            /* restarted */
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static uint8_t swd_enable_debug(void) {
+    uint32_t val;
+    if (!swd_read_word(DBGDSCR, &val)) {
+        return 0;
+    }
+    /* DBGDSCR ITRen = 1(ARM instruction enable) */
+    /* and ExtDCCmode = 01(stall mode) */
+    val = val | 0x00106000;
+    if (!swd_write_word(DBGDSCR, val)) {
+        return 0;
+    }
+    return 1;
+}
+#endif
+
+#if defined(BOARD_RZA1H)
+static uint8_t swd_read_core_register(uint32_t n, uint32_t *val, uint32_t cmd) {
+#else
 static uint8_t swd_read_core_register(uint32_t n, uint32_t *val) {
+#endif
+#if defined(BOARD_RZA1H)
+    if (!swd_write_word(DBGITR, cmd)) {
+        return 0;
+    }
+    
+    if (!swd_read_word(DBGDTRTX, val)){
+        return 0;
+    }
+
+    return 1;
+#else
     int i = 0, timeout = 100;
     if (!swd_write_word(DCRSR, n)) {
         return 0;
@@ -543,7 +849,6 @@ static uint8_t swd_read_core_register(uint32_t n, uint32_t *val) {
 
     // wait for S_REGRDY
     for (i = 0; i < timeout; i++) {
-
         if (!swd_read_word(DHCSR, val)) {
             return 0;
         }
@@ -562,9 +867,26 @@ static uint8_t swd_read_core_register(uint32_t n, uint32_t *val) {
     }
 
     return 1;
+#endif
 }
 
+#if defined(BOARD_RZA1H)
+static uint8_t swd_write_core_register(uint32_t n, uint32_t val, uint32_t cmd) {
+#else
 static uint8_t swd_write_core_register(uint32_t n, uint32_t val) {
+#endif
+#if defined(BOARD_RZA1H)
+    if (!swd_write_word(DBGDTRRX, val)){
+        return 0;
+    }
+
+    /* Write cmd */
+    if (!swd_write_word(DBGITR, cmd)) {
+        return 0;
+    }
+    return 1;
+
+#else
     int i = 0, timeout = 100;
     if (!swd_write_word(DCRDR, val))
         return 0;
@@ -584,12 +906,15 @@ static uint8_t swd_write_core_register(uint32_t n, uint32_t val) {
             return 1;
         }
     }
-
     return 0;
+#endif
 }
 
 uint8_t swd_is_semihost_event(uint32_t *r0, uint32_t *r1) {
     uint32_t val;
+#if defined(BOARD_RZA1H)
+    uint32_t work_cmd;
+#endif
 
     if (!swd_read_word(DBG_HCSR, &val)) {
         return 0;
@@ -602,6 +927,20 @@ uint8_t swd_is_semihost_event(uint32_t *r0, uint32_t *r1) {
 
     // Has hit breakpoint
     // Read r0 and r1
+#if defined(BOARD_RZA1H)
+    work_cmd = 0;
+    work_cmd = (CMD_MCR | (0 << 12));
+    if (!swd_read_core_register(0, r0, work_cmd)) {
+        return 0;
+    }
+
+    work_cmd = 0;
+    work_cmd = (CMD_MCR | (1 << 12));
+    if (!swd_read_core_register(1, r1, work_cmd)) {
+        return 0;
+    }
+
+#else
     if (!swd_read_core_register(0, r0)) {
         return 0;
     }
@@ -609,12 +948,28 @@ uint8_t swd_is_semihost_event(uint32_t *r0, uint32_t *r1) {
     if (!swd_read_core_register(1, r1)) {
         return 0;
     }
+#endif
 
     return 1;
 }
 
 static uint8_t swd_wait_until_halted(void) {
     // Wait for target to stop
+#if defined(BOARD_RZA1H)
+    uint32_t val, i, timeout = MAX_TIMEOUT;
+    for (i = 0; i < timeout; i++) {
+        /* read DBGDSCR */
+        if (!swd_read_word(DBGDSCR, &val)) {
+            return 0;
+        }
+
+        if ((val & DBGDSCR_HALTED) == DBGDSCR_HALTED) {
+            return 1;
+        }
+        os_dly_wait(1);
+    }
+    return 0;
+#else
     uint32_t val, i, timeout = MAX_TIMEOUT;
     for (i = 0; i < timeout; i++) {
 
@@ -627,18 +982,52 @@ static uint8_t swd_wait_until_halted(void) {
         }
     }
     return 0;
+#endif
 }
 
 // Restart target after BKPT
 uint8_t swd_semihost_restart(uint32_t r0) {
     uint32_t pc;
+#if defined(BOARD_RZA1H)
+    uint32_t work_cmd;
+#endif
 
     // Update r0
+#if defined(BOARD_RZA1H)
+    work_cmd = 0;
+    work_cmd = (CMD_MRC | (0 << 12));
+    if (!swd_write_core_register(0, r0, work_cmd)) {
+            return 0;
+        }
+#else
     if (!swd_write_core_register(0, r0)) {
         return 0;
     }
+#endif
 
     // Update PC
+#if defined(BOARD_RZA1H)
+    /* R15(PC) */
+    /* check PC */
+    work_cmd = 0;
+    work_cmd = (CMD_MCR | (15 << 12));
+    if (!swd_read_core_register(15, &pc, work_cmd)) {
+        return 0;
+    }
+
+    /* MRC R7 */
+    work_cmd = 0;
+    work_cmd = (CMD_MRC | (7 << 12));
+    if (!swd_write_core_register(7, pc + 4, work_cmd)) {
+        return 0;
+    }
+    /* MOV R15, R7 */
+    work_cmd = 0;
+    work_cmd = (CMD_MOV | (15 << 12) | (7));
+    if (!swd_write_word(DBGITR, work_cmd)) {
+        return 0;
+    }
+#else
     if (!swd_read_core_register(15, &pc)) {
         return 0;
     }
@@ -646,20 +1035,34 @@ uint8_t swd_semihost_restart(uint32_t r0) {
     if (!swd_write_core_register(15, pc + 2)) {
         return 0;
     }
+#endif
 
     // Restart
+#if defined(BOARD_RZA1H)
+    if (!swd_restart_req()) {
+        return 0;
+    }
+#else
     if (!swd_write_word(DBG_HCSR, DBGKEY | C_DEBUGEN)) {
         return 0;
     }
+#endif
 
     return 1;
 }
 
 uint8_t swd_flash_syscall_exec(const FLASH_SYSCALL *sysCallParam, uint32_t entry, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4) {
     DEBUG_STATE state;
+#if defined(BOARD_RZA1H)
+    uint32_t work_cmd;
+#endif
 
     // Call flash algorithm function on target and wait for result.
+#if defined(BOARD_RZA1H)
+    state.xpsr     = 0x00000000;          // xPSR: T = 1, ISR = 0
+#else
     state.xpsr     = 0x01000000;          // xPSR: T = 1, ISR = 0
+#endif
     state.r[0]     = arg1;                   // R0: Argument 1
     state.r[1]     = arg2;                   // R1: Argument 2
     state.r[2]     = arg3;                   // R2: Argument 3
@@ -679,9 +1082,21 @@ uint8_t swd_flash_syscall_exec(const FLASH_SYSCALL *sysCallParam, uint32_t entry
         return 0;
     }
 
+#if defined(BOARD_RZA1H)
+    if (!swd_enable_debug()) {
+        return 0;
+    }
+    /* r0 read */
+    work_cmd = 0;
+    work_cmd = (CMD_MCR | (0 << 12));
+    if (!swd_read_core_register(0, &state.r[0], work_cmd)) {
+        return 0;
+    }
+#else
     if (!swd_read_core_register(0, &state.r[0])) {
         return 0;
     }
+#endif
 
     // Flash functions return 0 if successful.
     if (state.r[0] != 0) {
@@ -760,6 +1175,12 @@ static uint8_t JTAG2SWD() {
 static uint8_t swd_init_debug(void) {
     uint32_t tmp = 0;
 
+#if defined(BOARD_RZA1H)
+    if (swd_init_debug_flag != 0) {
+        return 1;
+    }
+    swd_init_debug_flag = 1;
+#endif
     // init dap state with fake values
     dap_state.select = 0xffffffff;
     dap_state.csw = 0xffffffff;
@@ -882,7 +1303,20 @@ uint8_t swd_set_target_state(TARGET_RESET_STATE state) {
             if (!swd_init_debug()) {
                 return 0;
             }
-
+#if defined(BOARD_RZA1H)
+            if (!swd_enable_debug()) {
+                return 0;
+            }
+            /* DBGDRCR halt req*/
+            val = 0x00000001;
+            if (!swd_write_word(DBGDRCR, val )) {
+                return 0;
+            }
+            os_dly_wait(2);
+            if (!swd_wait_until_halted()) {
+                return 0;
+            }
+#else
             // Enable debug
             if (!swd_write_word(DBG_HCSR, DBGKEY | C_DEBUGEN)) {
                 return 0;
@@ -898,6 +1332,7 @@ uint8_t swd_set_target_state(TARGET_RESET_STATE state) {
             os_dly_wait(2);
 
             swd_set_target_reset(0);
+#endif
 #else            
             if (!swd_init_debug()) {
                 return 0;
@@ -925,6 +1360,9 @@ uint8_t swd_set_target_state(TARGET_RESET_STATE state) {
                 return 0;
             }
 #endif
+
+#if defined(BOARD_RZA1H)
+#else
             os_dly_wait(2);
 
             do {
@@ -938,6 +1376,7 @@ uint8_t swd_set_target_state(TARGET_RESET_STATE state) {
                 return 0;
             }
 			
+#endif
             break;
 
         case NO_DEBUG:

@@ -435,6 +435,11 @@ static uint8_t listen_msc_isr = 1;
 static uint8_t drag_success = 1;
 static uint8_t reason = 0;
 static uint32_t flash_addr_offset = 0;
+#if defined(BOARD_RZA1H)
+static uint32_t last_erase_sector = 0xFFFFFFFF;
+static uint32_t now_erase_sector = 0xFFFFFFFF;
+#else
+#endif
 //default to HEX_FILE type for NRF    
 #if defined(DBG_NRF51822)
 static FILE_TYPE fileTypeReceived = HEX_FILE;
@@ -560,6 +565,11 @@ void init(uint8_t jtag) {
     listen_msc_isr = 1;
     flash_addr_offset = 0;
     
+#if defined(BOARD_RZA1H)
+    last_erase_sector = 0xFFFFFFFF;
+    now_erase_sector  = 0xFFFFFFFF;
+#else
+#endif
     //default to HEX_FILE type for NRF
 #if defined(DBG_NRF51822)
     fileTypeReceived = HEX_FILE;
@@ -980,6 +990,8 @@ void usbd_msc_write_sect (uint32_t block, uint8_t *buf, uint32_t num_of_blocks) 
 
         if (jtag_flash_init == 1) {
             main_blink_msd_led(1);
+
+			#if !defined(BOARD_RZA1H)
             // We erase the chip if we received unrelated data before (mac compatibility)
             if (maybe_erase && (block == theoretical_start_sector)) {
                 // avoid erasing the internal flash if only the external flash will be updated
@@ -995,6 +1007,7 @@ void usbd_msc_write_sect (uint32_t block, uint8_t *buf, uint32_t num_of_blocks) 
                 maybe_erase = 0;
                 program_page_error = 0;
             }
+#endif
 
             // drop block < theoretical_sector
             if (theoretical_start_sector > block) {
@@ -1028,6 +1041,20 @@ void usbd_msc_write_sect (uint32_t block, uint8_t *buf, uint32_t num_of_blocks) 
                 msc_event_timeout = 0;
             }
 
+#if defined(BOARD_RZA1H)
+            if (flash_started) {
+                /* Check write sector of Serial Flash */
+                now_erase_sector = (flashPtr + flash_addr_offset) >> 16;
+                if (last_erase_sector != now_erase_sector) {
+                    if (target_flash_erase_sector(now_erase_sector) == 0) {
+                        reason = SWD_ERROR;
+                        initDisconnect(0);
+                        return;
+                    }
+                    last_erase_sector = now_erase_sector;
+                }
+            }
+#else
             if (flash_started && (block == theoretical_start_sector)) {
                 // avoid erasing the internal flash if only the external flash will be updated
                 if (flash_addr_offset == 0) {
@@ -1043,6 +1070,7 @@ void usbd_msc_write_sect (uint32_t block, uint8_t *buf, uint32_t num_of_blocks) 
                 maybe_erase = 0;
                 program_page_error = 0;
             }
+#endif
 
             previous_sector = block;
             current_sector++;
@@ -1054,7 +1082,13 @@ void usbd_msc_write_sect (uint32_t block, uint8_t *buf, uint32_t num_of_blocks) 
                 }
                 program_page_error = 1;
                 return;
+#if defined(BOARD_RZA1H)
+            } else {
+                program_page_error = 0;
             }
+#else
+            }
+#endif
         }
     }
 }

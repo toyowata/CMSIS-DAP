@@ -60,7 +60,7 @@
 
 #elif defined (BOARD_LPC810)
 #define BOARD_ID        "1050"
-#define BOARD_SECRET    "78a0cd72"
+#define BOARD_SECRET    "xxxxxxxx"
 
 #elif defined (BOARD_SEEED_ARCH_PRO)
 #define BOARD_ID        "9004"
@@ -95,7 +95,7 @@
 #define BOARD_SECRET    "xxxxxxxx"
 
 #elif defined (BOARD_ARCH_BLE)
-#define BOARD_ID        "9009"
+#define BOARD_ID        "1140"
 #define BOARD_SECRET    "xxxxxxxx"
 
 #elif defined (BOARD_HRM1017)
@@ -104,11 +104,15 @@
 
 #elif defined (BOARD_LPC11U35)
 #define BOARD_ID        "9007"
-#define BOARD_SECRET    "00000"
+#define BOARD_SECRET    "xxxxxxxx"
 
 #elif defined (BOARD_RZA1H)
-#define BOARD_ID        "9100"
-#define BOARD_SECRET    "00000"
+#define BOARD_ID        "5500"
+#define BOARD_SECRET    "xxxxxxxx"
+
+#elif defined (BOARD_WALLBOT_BLE)
+#define BOARD_ID        "1140"
+#define BOARD_SECRET    "xxxxxxxx"
 
 #endif
 

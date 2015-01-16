@@ -1346,7 +1346,12 @@ void DAP_Setup(void) {
   // Default settings (only non-zero values)
 //DAP_Data.debug_port  = 0;
 //DAP_Data.fast_clock  = 0;
+#if defined(BOARD_RZA1H)
+  DAP_Data.fast_clock  = 1;
+  DAP_Data.clock_delay = 1;
+#else
   DAP_Data.clock_delay = CLOCK_DELAY(DAP_DEFAULT_SWJ_CLOCK);
+#endif
 //DAP_Data.transfer.idle_cycles = 0;
   DAP_Data.transfer.retry_count = 100;
 //DAP_Data.transfer.match_retry = 0;

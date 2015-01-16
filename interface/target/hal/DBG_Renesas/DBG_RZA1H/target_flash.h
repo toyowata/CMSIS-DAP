@@ -22,10 +22,10 @@
 
 #define FLASH_SECTOR_SIZE           (2048)  /* 1024 is assuming that this value is in number of uint32_t's */
 
-#define TARGET_AUTO_INCREMENT_PAGE_SIZE    (0x1000)
+#define TARGET_AUTO_INCREMENT_PAGE_SIZE    (0x400)
 
-#define RAM_START	0x20020000
-#define FLASH_START	0x18000000
+#define RAM_START   0x20020000
+#define FLASH_START 0x00000000
 
 static uint8_t target_flash_init(uint32_t clk);
 static uint8_t target_flash_uninit(void);
@@ -34,7 +34,12 @@ static uint8_t target_flash_erase_sector(uint32_t adr);
 static uint8_t target_flash_program_page(uint32_t adr, uint8_t * buf, uint32_t size);
 
 static const uint32_t RZA1H_FLM[] = {
+#if defined(BOARD_RZA1H)
+    /* modify BKPT thumb instruction to arm instruction */
+    0xE1200070, 0x062D780D, 0x24084068, 0xD3000040, 0x1E644058, 0x1C49D1FA, 0x2A001E52, 0x4770D1F2,
+#else
     0xE00ABE00, 0x062D780D, 0x24084068, 0xD3000040, 0x1E644058, 0x1C49D1FA, 0x2A001E52, 0x4770D1F2,
+#endif
     0xe92d41f0, 0xe1a04000, 0xe1a06001, 0xe1a07002, 0xe59f00e0, 0xe0800009, 0xe5804000, 0xeb00079c, 
     0xe1a05000, 0xe3550000, 0x0a000001, 0xe3a00001, 0xe8bd81f0, 0xe3a00000, 0xeafffffc, 0xe92d4010, 
     0xe1a04000, 0xeb0007a4, 0xe3a00000, 0xe8bd8010, 0xe92d4010, 0xeb0007ae, 0xe1a04000, 0xe3540000, 
@@ -305,7 +310,7 @@ static const TARGET_FLASH flash = {
     sizeof(RZA1H_FLM),    // algo_size
     RZA1H_FLM,            // image
 
-    512          // ram_to_flash_bytes_to_be_written
+    256          // ram_to_flash_bytes_to_be_written
 };
 
 static uint8_t target_flash_init(uint32_t clk) {
@@ -322,7 +327,7 @@ static uint8_t target_flash_init(uint32_t clk) {
 }
 
 static uint8_t target_flash_erase_sector(unsigned int sector) {
-    if (!swd_flash_syscall_exec(&flash.sys_call_param, flash.erase_sector, (sector * 0x1000), 0, 0, 0)) {
+    if (!swd_flash_syscall_exec(&flash.sys_call_param, flash.erase_sector, sector, 0, 0, 0)) {
         return 0;
     }
 
@@ -333,9 +338,9 @@ static uint8_t target_flash_erase_chip(void) {
     if (!swd_flash_syscall_exec(&flash.sys_call_param, flash.erase_chip, 0, 0, 0, 0)) {
         return 0;
     }
-	else {
-		return 1;
-	}
+    else {
+        return 1;
+    }
 }
 
 static uint8_t target_flash_program_page(uint32_t addr, uint8_t * buf, uint32_t size)
@@ -347,7 +352,7 @@ static uint8_t target_flash_program_page(uint32_t addr, uint8_t * buf, uint32_t 
         return 0;
     }
 
-	addr += FLASH_START;
+    addr += FLASH_START;
     while(bytes_written < size) {
         if (!swd_flash_syscall_exec(&flash.sys_call_param,
                                     flash.program_page,
@@ -363,6 +368,5 @@ static uint8_t target_flash_program_page(uint32_t addr, uint8_t * buf, uint32_t 
 
     return 1;
 }
-
 
 #endif
