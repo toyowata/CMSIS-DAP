@@ -29,6 +29,7 @@ static uint32_t test_range(const uint32_t test, const uint32_t min, const uint32
 
 uint8_t validate_bin_nvic(uint8_t *buf)
 {
+#if 0
     // test for known required NVIC entries
     //  0 is stack pointer (RAM address)
     //  1 is Reset vector  (FLASH address)
@@ -44,6 +45,7 @@ uint8_t validate_bin_nvic(uint8_t *buf)
     if (0 == test_range(nvic_rv, target_device.flash_start, target_device.flash_end)) {
         return 0;
     }
+#endif
     
     return 1;
 }
@@ -55,7 +57,6 @@ uint8_t validate_hexfile(uint8_t *buf)
 
 target_flash_status_t target_flash_init(extension_t ext)
 {
-        return TARGET_FAIL_RESET;
     PORT_SWD_SETUP();
     if (!target_set_state(RESET_PROGRAM)) {
         return TARGET_FAIL_RESET;

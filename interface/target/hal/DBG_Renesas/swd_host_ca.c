@@ -43,7 +43,7 @@
 #define REGWnR (1 << 16)
 
 #define MAX_SWD_RETRY 10
-#define MAX_TIMEOUT   10000  // Timeout for syscalls on target
+#define MAX_TIMEOUT   100  // Timeout for syscalls on target
 
 #define CMD_MRC                (0xEE100E15)  /* 1110 1110 0001 0000 RRRR 1110 0001 0101 */
 #define CMD_MCR                (0xEE000E15)  /* 1110 1110 0000 0000 RRRR 1110 0001 0101 */
