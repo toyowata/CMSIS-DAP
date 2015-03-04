@@ -23,6 +23,11 @@
 #include "DAP_config.h"
 #include "DAP.h"
 
+#if defined(TARGET_AUTO_INCREMENT_PAGE_SIZE)
+#undef TARGET_AUTO_INCREMENT_PAGE_SIZE
+#define TARGET_AUTO_INCREMENT_PAGE_SIZE 0x400
+#endif
+
 // Default NVIC and Core debug base addresses
 // TODO: Read these addresses from ROM.
 #define DBG_Addr     (0xe000edf0)
