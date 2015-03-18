@@ -22,32 +22,19 @@
 #include "DAP_config.h"
 #include "string.h"
 
-static uint32_t test_range(const uint32_t test, const uint32_t min, const uint32_t max)
-{
-    return ((test < min) || (test > max)) ? 0 : 1;
-}
 
 uint8_t validate_bin_nvic(uint8_t *buf)
 {
-#if 0
-    // test for known required NVIC entries
-    //  0 is stack pointer (RAM address)
-    //  1 is Reset vector  (FLASH address)
-    uint32_t nvic_sp = 0;
-    uint32_t nvic_rv = 0;
-    // test the initial SP value
-    memcpy(&nvic_sp, buf, sizeof(nvic_sp));
-    if (0 == test_range(nvic_sp, target_device.ram_start, target_device.ram_end)) {
-        return 0;
-    }
-    // test the initial reset vector
-    memcpy(&nvic_rv, buf+4, sizeof(nvic_rv));
-    if (0 == test_range(nvic_rv, target_device.flash_start, target_device.flash_end)) {
-        return 0;
-    }
-#endif
-    
-    return 1;
+	// Very dirty hacking here for ARMv7-A (non Cortex-M) binary detection
+	//
+	// This returns validated result when start instrunction
+	// of the buffer is 0xE59FF0** (LDR  PC, Label)
+	
+	if (buf[1] == 0xF0 && buf[2] == 0x9F && buf[3] == 0xE5)
+		return 1;
+	else
+		return 0;
+	
 }
 
 uint8_t validate_hexfile(uint8_t *buf)
@@ -76,10 +63,9 @@ target_flash_status_t target_flash_init(extension_t ext)
 
 target_flash_status_t target_flash_erase_sector(unsigned int sector)
 {
-    if (!swd_flash_syscall_exec(&flash.sys_call_param, flash.erase_sector, sector * target_device.sector_size, 0, 0, 0)) {
+    if (!swd_flash_syscall_exec(&flash.sys_call_param, flash.erase_sector, sector, 0, 0, 0)) {
         return TARGET_FAIL_ERASE_SECTOR;
     }
-
     return TARGET_OK;
 }
 
