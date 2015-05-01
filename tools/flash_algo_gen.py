@@ -38,7 +38,7 @@ ALGO_START_ADDRESSES = {
     'LPC43xx':  0x10000000,
     'LPC4337':  0x10000000,
     'MKXX':     0x20000000,
-    '':     0x20000000,
+    'RZ/A1H':   0x20020000,
 }
 
 class FlashInfo(object):
@@ -118,6 +118,11 @@ def gen_flash_algo():
     print "ALGO_START = 0x%08x\n" % ALGO_START
 
     flash_info.printInfo()
+    
+#    if target == 'RZ/A1H':
+#    	Thumb_mode = 0
+#    else:
+#    	Thumb_mode = 1
 
     with open(ALGO_BIN_PATH, "rb") as f, open(ALGO_TXT_PATH, mode="w+") as res:
         # Flash Algorithm - these instructions are the ALGO_OFFSET

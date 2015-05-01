@@ -95,5 +95,7 @@ static const TARGET_FLASH flash = {
     512          // ram_to_flash_bytes_to_be_written
 };
 
+#define SECTOR_BOUNDARY       0x00010000 
+#define SECTOR_BOUNDARY_ALIGN 0x00010000 
 
 #endif
