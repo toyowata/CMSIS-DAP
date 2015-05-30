@@ -21,11 +21,11 @@
 const target_cfg_t target_device = {
     .board_id   = "5500",
     .secret     = "xxxxxxxx",
-    .sector_size    = 4096,
+    .sector_size    = kB(64),
     // Assume memory is regions are same size. Flash algo should ignore requests
     //  when variable sized sectors exist
     // .sector_cnt = ((.flash_end - .flash_start) / .sector_size);
-    .sector_cnt     = (MB(8)/4096),
+    .sector_cnt     = (MB(8)/kB(64)),
     .flash_start    = 0,
     .flash_end      = MB(8),
     .ram_start      = 0x10000000,
