@@ -43,7 +43,7 @@
 
 #define USE_USB_EJECT_INSERT
 
-#if defined(BOARD_LPC1549) || defined(BOARD_LPC11U68) || defined(BOARD_LPC4337)
+#if defined(BOARD_LPC1549) || defined(BOARD_LPC11U68) || defined(BOARD_LPC4337) || defined(BOARD_W7500)
     #define USE_USB_EJECT_INSERT
 #endif
 

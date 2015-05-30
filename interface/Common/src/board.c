@@ -108,6 +108,10 @@
 #elif defined (BOARD_RZA1H)
 #define BOARD_ID        "5500"
 #define BOARD_SECRET    "xxxxxxxx"
+
+#elif defined (BOARD_W7500)
+#define BOARD_ID        "2201"
+#define BOARD_SECRET    "xxxxxxxx"
 #endif
 
 #if !defined(BOARD_SECRET) || !defined(BOARD_ID)
